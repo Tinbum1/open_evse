@@ -1,71 +1,327 @@
-# OpenEVSE
+# OpenEVSE — System Overview & Developer Reference
 
-Firmware for OpenEVSE controller used in OpenEVSE Charging Stations sold in the USA, and OpenEnergyMonitor EmonEVSE units sold in (UK/EU).
+OpenEVSE is an open-source electric vehicle supply equipment (EVSE) platform consisting of three tightly integrated components: an AVR-based charging controller, an ESP32 WiFi gateway, and a Svelte web interface. Together they deliver a fully featured, locally hosted EV charging station with cloud integration, energy management, and smart-home connectivity.
 
-- OpenEVSE: <https://store.openevse.com/collections/all-products>
-- EmonEVSE: <https://shop.openenergymonitor.com/evse/>
+---
 
-Based on OpenEVSE: Open Source Hardware J1772 Electric Vehicle Supply Equipment
+## Architecture Overview
 
-## USA
+```
+┌─────────────────────────────────────────────────────┐
+│                   Web Browser / App                 │
+│            openevse-gui-v2  (Svelte / Vite)         │
+└────────────────────┬────────────────────────────────┘
+                     │  HTTP REST / WebSocket
+┌────────────────────▼────────────────────────────────┐
+│          ESP32 WiFi Gateway Firmware                │
+│    openevse_esp32_firmware  (C / C++ / ESP-IDF)     │
+│  WiFi · Ethernet · MQTT · OCPP · Home Assistant     │
+└────────────────────┬────────────────────────────────┘
+                     │  Serial RAPI API (UART) 115200
+┌────────────────────▼────────────────────────────────┐
+│      OpenEVSE EV Safety Controller Firmware         │
+│      open_evse  (C++, ATmega328P/ARM SAMD21)        │
+│   J1772 · GMI/GFI · Relay · Pilot · Proximity       │
+└─────────────────────────────────────────────────────┘
+```
+---
 
-TODO: add notes about USA OpenEVSE
+## 1. OpenEVSE Controller Firmware
 
-## UK/EU
+**Repository:** <https://github.com/OpenEVSE/open_evse>  
+**MCU:** ATmega328P / ATSAMD21G18  
+**Language:** C++ (83.8%), Roff  
+**Standard:** SAE J1772 (Level 1 & Level 2)
 
-- Disable `AUTOSVCLEVEL` (autodetection is designed for split-phase)
-- Charging level default to `L2`
-- Set `MAX_CURRENT_CAPACITY_L2 32` (limit for single-phase charging in UK/EU)
-- Add '.EU' to version number
-- Enable LCD Redraw every couple of min (required for EMC/CE)
+### Key Capabilities
 
-### EmonEVSE
+- GFI (Ground Fault Interrupter) protection
+- Pilot signal generation and state machine (A/B/C/D/E/F)
+- Relay control with stuck-relay and no-ground fault detection
+- Time-based scheduled charging
+- Display with 3.5" TFT or Text RGB backlight
+- Temperature monitoring (MCP9808)
+- Ammeter with calibration
+- Charge time and energy limits
+- Heartbeat supervision for gateway watchdog
+- Mennekes lock control (EU Type 2)
 
-EmonEVSE (non-tethered type-2 EVSE unit)
+### Build & Programming
 
-- `PP_AUTO_AMPACITY` enabled to set max current based on non-tethered cable connected
-- Three-phase option with `THREEPHASE` enabled to calculate three-phase energy ( Unneeded with ESP32_WiFi firmware >= 4.2
+- Pre-compiled binaries available on GitHub Releases
+- Compile with VSCode / PlatformIO using bundled library versions
+- Flash via `avrdude` with USBASP or compatible ISP programmer
+- Hardware definitions in `/boards/`, firmware source in `/firmware/open_evse/`
 
-## API Documentation
+---
 
-- WIFI API: <http://github.com/openevse/ESP32_WiFi_V4.x/>
-- RAPI API: <https://github.com/openenergymonitor/open_evse/blob/master/firmware/open_evse/rapi_proc.h>
+## 2. RAPI Protocol
 
-## Resources
+The Remote API (RAPI) is a serial ASCII protocol used by the ESP32 gateway (and any host) to control and query the OpenEVSE controller over UART.
 
-- [OpenEnergyMonitor OpenEVSE Setup Guide](https://guide.openenergymonitor.org/integrations/openevse)
-- [OpenEnergyMonitor OpenEVSE Shop](https://shop.openenergymonitor.com/ev-charging/)
+**Format:** `$<cmd> [args...]*<checksum>\r\n`  
+**Response:** `$OK [values...]` or `$NK` (not OK)
 
-- [OpenEVSE Controller Datasheet](https://github.com/OpenEVSE/OpenEVSE_PLUS/blob/master/OpenEVSE_PLUS_v5/OpenEVSE_Plus_v5.pdf)
-- [OpenEVSE Controller Hardware Repo](https://github.com/OpenEVSE/OpenEVSE_PLUS)
-- [OpenEVSE Project Homepage](https://openevse.com)
+### Function Commands
 
-***
+| Command | Description | Parameters |
+|---|---|---|
+| `FD` | Disable EVSE | — |
+| `FE` | Enable EVSE | — |
+| `FS` | Sleep EVSE | — |
+| `FR` | Restart EVSE | — |
+| `F0` | Enable/disable display updates | `1`=enable, `0`=disable |
+| `F1` | Simulate front-panel button press | — |
+| `FB` | Set LCD backlight color | `0`=OFF `1`=RED `2`=GREEN `3`=YELLOW `4`=BLUE `5`=VIOLET `6`=TEAL `7`=WHITE |
+| `FP` | Print text on LCD | x, y, text |
+| `FF` | Enable/disable feature flag | feature_id (`B/D/E/F/G/R/T/V`), `0`/`1` |
 
-Firmware compile & upload help: [firmware/open_evse/LoadingFirmware.md](firmware/open_evse/LoadingFirmware.md)
+### Set Commands
 
-NOTES:
+| Command | Description | Parameters |
+|---|---|---|
+| `SC` | Set current capacity | amps, `[V\|M]` |
+| `SL` | Set service level | `1`=L1, `2`=L2, `A`=Auto |
+| `ST` | Set timer | starthr, startmin, endhr, endmin |
+| `S3` | Set charge time limit | cnt × 15 min |
+| `SH` | Set charge limit | kWh |
+| `SK` | Set accumulated Wh | value |
+| `SV` | Set voltage for power calc | millivolts |
+| `SA` | Set ammeter calibration | currentscalefactor, currentoffset |
+| `SM` | Set voltmeter calibration | voltscalefactor, voltoffset |
+| `S1` | Set RTC clock | yr, mo, day, hr, min, sec |
+| `S2` | Enable/disable ammeter cal mode | `0`/`1` |
+| `S4` | Set auth lock | `0`=unlocked, `1`=locked |
+| `S5` | Mennekes lock setting | `A`=auto, `M`=manual, `0`=unlock, `1`=lock |
+| `SB` | Clear boot lock | — |
+| `SY` | Set heartbeat supervision | interval, currentlimit |
+| `S0` | Set LCD type | `0`=monochrome, `1`=RGB |
 
-- Working versions of the required libraries are included with the firmware code. This avoids potential issues related to using the wrong versions of the libraries.
-- Highly recommend using the tested pre-compiled firmware (see releases page)
+### Get Commands
 
-## Flash pre-compiled using avrdude
+| Command | Description | Response |
+|---|---|---|
+| `GS` | Get EVSE state | evsestate, elapsed, pilotstate, vflags |
+| `GG` | Get charging current & voltage | milliamps, millivolts |
+| `GU` | Get energy usage | Wattseconds, Whacc |
+| `GC` | Get current capacity info | minamps, hmaxamps, pilotamps, cmaxamps |
+| `GE` | Get settings | amps, flags |
+| `GV` | Get firmware & protocol version | firmware_version, protocol_version |
+| `GT` | Get RTC time | yr, mo, day, hr, min, sec |
+| `GP` | Get temperature sensors | ds3231temp, mcp9808temp, tmp007temp |
+| `GO` | Get overtemperature thresholds | ambientthresh, irthresh |
+| `GH` | Get charge limit | kWh |
+| `G3` | Get charge time limit | cnt |
+| `GD` | Get delay timer | starthr, startmin, endhr, endmin |
+| `GF` | Get fault counters | gfitripcnt, nogndtripcnt, stuckrelaytripcnt |
+| `GA` | Get ammeter settings | currentscalefactor, currentoffset |
+| `GM` | Get voltmeter settings | voltscalefactor, voltoffset |
+| `G0` | Get EV connect state | connectstate (`0`/`1`/`2`) |
+| `G4` | Get auth lock state | lockstate |
+| `G5` | Get Mennekes settings | state, mode |
+| `GI` | Get MCU ID | mcuid |
+| `GY` | Get heartbeat supervision status | interval, currentlimit, trigger |
 
-`$ avrdude -p atmega328p -B6 -c usbasp -P usb -e -U flash:w:firmware.hex`
+---
 
-ISP programmer required e.g [USBASP](https://www.amazon.co.uk/Hobby-Components-USBASP-Programmer-Adapter/dp/B06XYV162N)
+## 3. ESP32 WiFi Gateway Firmware
 
-### Set AVR fuses
+**Repository:** <https://github.com/OpenEVSE/openevse_esp32_firmware>  
+**MCU:** ESP32  
+**Language:** C (73%), C++ (24.7%)  
+**License:** GPL v3  
+**Latest Release:** v5.1.5 (October 2025)  
+**Minimum OpenEVSE firmware:** v7.1.3
 
-This only needs to be done once in the factory
+### Connectivity
 
-`avrdude -c USBasp -p m328p -U lfuse:w:0xFF:m -U hfuse:w:0xDF:m -U efuse:w:0xFD:m -B6`
+- 802.11 b/g/n WiFi (AP + STA modes)
+- Wired Ethernet via ESP32 Gateway board
+- UART to OpenEVSE controller (RAPI)
 
-If writing eFuse fails ISBasp may need a [firmware update](https://www.vishnumaiea.in/articles/electronics/how-to-solve-usbasp-avr-efuse-write-problem-on-progisp)
+### Features
 
-***
+| Feature | Status |
+|---|---|
+| Web UI control (start/pause, current, schedules, limits) | Stable |
+| MQTT status & control | Stable |
+| Emoncms logging (`data.openevse.com` or self-hosted) | Stable |
+| Eco / Solar divert mode | Stable |
+| Power shaper (grid capacity management) | Stable |
+| OTA firmware updates | Stable |
+| OCPP v1.6J | Stable |
+| Home Assistant integration | Stable |
+| Tesla vehicle API | Available |
 
-Tip Jar: I developed/maintain this firmware on a volunteer basis. Any donation, no matter how small, is greatly appreciated.
+### REST API
+
+Base URL: `http://<device-ip>` (default hostname: `openevse.local`)
+
+#### Status
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/status` | Current EVSE operational state |
+| `POST` | `/status` | Push external data (voltage, power, solar, grid, battery) |
+| `GET` | `/ws` | WebSocket — real-time state stream |
+
+#### Configuration
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/config` | Read WiFi/EVSE settings |
+| `POST` | `/config` | Write config (EmonCMS, solar divert, charging mode, Tesla credentials) |
+
+#### Manual Override
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/override` | Read current override |
+| `POST` | `/override` | Set override with custom parameters |
+| `PATCH` | `/override` | Toggle override state |
+| `DELETE` | `/override` | Clear override |
+
+#### Claims (multi-client current arbitration)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/claims` | List all client claims |
+| `GET` | `/claims/{client}` | Get specific client claim |
+| `POST` | `/claims/{client}` | Create/update claim |
+| `DELETE` | `/claims/{client}` | Release claim |
+
+#### Scheduling
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/schedule` | List all schedule events |
+| `POST` | `/schedule` | Batch update events |
+| `GET` | `/schedule/{id}` | Get event by ID |
+| `POST` | `/schedule/{id}` | Update event |
+| `DELETE` | `/schedule/{id}` | Remove event |
+| `GET` | `/schedule/plan` | Planned events by day |
+
+#### Limits
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/limit` | Get active charge limit |
+| `POST` | `/limit` | Set charge limit |
+| `DELETE` | `/limit` | Clear charge limit |
+
+#### System
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/restart` | Restart gateway or EVSE (`device` param) |
+| `GET` | `/time` | Get current time and timezone offset |
+| `POST` | `/time` | Set time and timezone |
+| `DELETE` | `/emeter` | Reset energy meter |
+| `GET` | `/logs` | Log block index |
+| `GET` | `/logs/{index}` | Fetch log events for block |
+
+#### Tesla
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/tesla/vehicles` | List vehicles linked to Tesla account |
+
+#### Certificates
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/certificates` | List uploaded TLS certificates |
+| `POST` | `/certificates` | Upload certificate |
+| `GET` | `/certificates/{id}` | Get certificate by ID |
+| `DELETE` | `/certificates/{id}` | Delete certificate |
+
+### Full API Spec
+
+OpenAPI / Swagger specification: `api.yml` in the firmware repository root.  
+Interactive docs: <https://openevse.stoplight.io/docs/openevse-wifi>
+
+---
+
+## 4. Web Interface (openevse-gui-v2)
+
+**Repository:** <https://github.com/OpenEVSE/openevse-gui-v2>  
+**License:** BSD-2-Clause  
+**Stack:** Svelte, Vite, Bulma CSS  
+**Language:** Svelte (54.9%), JavaScript (44.2%)
+
+### Features
+
+- Dashboard: live state, current draw, energy session
+- Start / pause charging
+- Current capacity slider
+- Scheduler: create, edit, and delete timed charging events
+- Eco/Solar divert mode controls
+- System configuration (WiFi, MQTT, EmonCMS, limits)
+- Internationalization (i18n)
+
+### Development
+
+```bash
+# Clone with submodules
+git clone --recurse-submodules https://github.com/OpenEVSE/openevse-gui-v2.git
+cd openevse-gui-v2
+
+npm install
+
+# Set target device (defaults to openevse.local)
+export VITE_OPENEVSEHOST=192.168.x.x
+
+npm run dev        # Dev server on :5173 — proxies API to VITE_OPENEVSEHOST
+npm run build      # Production build → dist/
+```
+
+---
+
+## 5. Integration Notes
+
+### MQTT
+
+The ESP32 gateway publishes EVSE state and subscribes to control topics. Configure broker, username, password, and base topic via `/config` or the web UI. Commonly used with Home Assistant MQTT discovery.
+
+### Emoncms
+
+Data can be logged to `enoncms.org` or a self-hosted Emoncms instance. Set `emoncms_apikey`, `emoncms_server`, and `emoncms_node` in `/config`.
+
+### Eco / Solar Divert Mode
+
+The gateway accepts real-time solar generation and grid import data via `POST /status` (fields: `solar`, `grid_ie`, `voltage`) and adjusts the pilot current to charge only from surplus renewable energy.
+
+### Home Assistant
+
+Beta native integration. Alternatively, use MQTT with HA's MQTT integration. The gateway's auto-discovery payloads populate entities automatically.
+
+### OCPP v1.6
+
+Beta support for communicating with a central management system (CMS/CSMS). Configure OCPP server URL and identity via `/config`.
+
+---
+
+## 6. Hardware References
+
+| Component | Link |
+|---|---|
+| OpenEVSE Plus v5 Controller | <https://github.com/OpenEVSE/OpenEVSE_PLUS> |
+| ESP32 WiFi Kit | <https://www.openevse.com> |
+| OpenEVSE Hardware Repo | <https://github.com/OpenEVSE/OpenEVSE_PLUS> |
+
+---
+
+## 7. Useful Links
+
+| Resource | URL |
+|---|---|
+| Main firmware repo | <https://github.com/OpenEVSE/open_evse> |
+| ESP32 gateway firmware | <https://github.com/OpenEVSE/openevse_esp32_firmware> |
+| Web interface | <https://github.com/OpenEVSE/openevse-gui-v2> |
+| Interactive API docs | <https://openevse.stoplight.io/docs/openevse-wifi> |
+| OpenEnergyMonitor | <https://openenergymonitor.org> |
+
+Tip Jar: Lincomatic developed/maintains this firmware on a volunteer basis. Any donation, no matter how small, is greatly appreciated.
 
 [![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.me/lincomatic)
 
