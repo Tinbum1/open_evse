@@ -233,8 +233,8 @@ class J1772EVSEController {
 
 #ifdef OEV6
   uint8_t isV6() { return m_isV6; }
-  uint8_t relay1Enable = 0;   //default to both relays disabled
-  uint8_t relay2Enable = 0;   //default to both relays disabled
+  uint8_t relay1Enable = 1;   //default to both relays enabled
+  uint8_t relay2Enable = 1;   //default to both relays enabled
 #endif
 
 #ifdef ADVPWR
