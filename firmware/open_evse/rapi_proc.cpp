@@ -29,6 +29,9 @@
 #endif // ARDUINO
 #include "open_evse.h"
 
+bool Relay1EnableEnergy;
+bool Relay2EnableEnergy;
+
 #ifdef RAPI
 const char RAPI_VER[] PROGMEM = RAPIVER;
 
@@ -538,6 +541,40 @@ int EvseRapiProcessor::processCmd()
       }
       break;
 #endif // VOLTMETER
+
+#ifdef OEV6
+        case 'R':   //Relay1 enable
+          if (tokenCnt == 2) {
+            if ( (uint8_t)dtou32(tokens[1]) == 1 ) {
+              g_EvseController.Relay1Enable(1);
+              Relay1EnableEnergy = true;
+            } else {
+              g_EvseController.Relay1Enable(0);
+              Relay1EnableEnergy = false;
+            }
+            u1.u8 = 1; // Mark as volatile / nosave = 1
+            rc = 0;
+          }
+
+          break;
+#endif //OEV6
+
+#ifdef OEV6
+        case 'S':   //Relay2 enable
+          if (tokenCnt == 2) {
+            if ( (uint8_t)dtou32(tokens[1]) == 1 ) {
+              g_EvseController.Relay2Enable(1);
+              Relay2EnableEnergy = true;
+            } else {
+              g_EvseController.Relay2Enable(0);
+              Relay2EnableEnergy = false;
+            }
+            u1.u8 = 1; // Mark as volatile / nosave = 1
+            rc = 0;
+          }
+          break;
+#endif //OEV6
+
 #ifdef DELAYTIMER     
     case 'T': // timer
       if (tokenCnt == 5) {
@@ -707,7 +744,12 @@ int EvseRapiProcessor::processCmd()
     case 'G':
       u1.i32 = g_EvseController.GetChargingCurrent();
       u2.i32 = (int32_t)g_EvseController.GetVoltage();
-      sprintf(buffer,"%ld %ld",u1.i32,u2.i32);
+          
+      // Map the global booleans to 1 (true) or 0 (false)
+      u3.u8 = Relay1EnableEnergy ? 1 : 0; 
+      u4.u8 = Relay2EnableEnergy ? 1 : 0; 
+
+      sprintf(buffer, "%ld %ld %d %d", u1.i32, u2.i32, u3.u8, u4.u8);
       bufCnt = 1; // flag response text output
       rc = 0;
       break;

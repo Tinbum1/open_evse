@@ -275,22 +275,34 @@ void J1772EVSEController::chargingOn()
     Serial.print("\nrelayCloseMs: ");Serial.println(m_relayCloseMs);
     Serial.print("relayHoldPwm: ");Serial.println(m_relayHoldPwm);
     // turn on charging pin to close relay
+    if (relay1Enable) {
     digitalWrite(V6_CHARGING_PIN,HIGH);
+    }
+    if (relay2Enable) {
     digitalWrite(V6_CHARGING_PIN2,HIGH);
+    }
     delay(m_relayCloseMs);
     // switch to PWM to hold closed
+    if (relay1Enable) {
     analogWrite(V6_CHARGING_PIN,m_relayHoldPwm);
+    }
+    if (relay2Enable) {
     analogWrite(V6_CHARGING_PIN2,m_relayHoldPwm);
+    }
 #else // !RELAY_PWM
+    if (relay1Enable) {
     digitalWrite(V6_CHARGING_PIN,HIGH);
+    }
+    if (relay2Enable) {
     digitalWrite(V6_CHARGING_PIN2,HIGH);
+    }
 #endif // RELAY_PWM
   }
   else {
 #endif // OEV6
 #ifdef CHARGING_REG
     pinCharging.write(1);
-#endif
+#endif // CHARGING_REG
 #ifdef CHARGING2_REG
     pinCharging2.write(1);
 #endif // CHARGING2_REG
@@ -318,6 +330,8 @@ void J1772EVSEController::chargingOn()
 void J1772EVSEController::chargingOff()
 {
  // turn off charging current
+  //Note - we don't care if relay2 is enabled or not,
+  // in all cases we turn off both relays.
 #ifdef OEV6
   if (isV6()) {
 #ifdef RELAY_AUTO_PWM_PIN
@@ -1252,6 +1266,18 @@ void J1772EVSEController::Update(uint8_t forcetransition)
     m_PrevEvseState = m_EvseState; // cancel state transition
     return;
   }
+
+    #ifdef OEV6
+    if (isV6()) {
+      if (relay1Enable) {digitalWrite(V6_CHARGING_PIN, HIGH);}
+      else
+      {digitalWrite(V6_CHARGING_PIN, LOW);}
+
+      if (relay2Enable) {digitalWrite(V6_CHARGING_PIN2, HIGH);}
+      else
+      {digitalWrite(V6_CHARGING_PIN2, LOW);}
+    }
+    #endif // OEV6
 
   ReadPilot(&plow,&phigh); // always read so we can update EV connect state, too
 

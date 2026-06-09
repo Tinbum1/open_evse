@@ -94,7 +94,9 @@ void EnergyMeter::calcUsage()
       // Multiply calculation by 3 to get 3-phase energy.
       // Typically you'd multiply by sqrt(3), but because voltage is measured to
       // ground (230V) rather than between phases (400 V), 3 is the correct multiple.
-      mws *= 3;
+      if (relay1Enable && relay2Enable){mws *= 3;}
+      else if (relay1Enable || relay2Enable){mws *= 2;}
+      else {mws *= 1;}      
 #endif // THREEPHASE
       // convert milliwatt-seconds to watt-seconds and increment counter
       m_wattSeconds += mws / 1000;
