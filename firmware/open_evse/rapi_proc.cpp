@@ -543,34 +543,42 @@ int EvseRapiProcessor::processCmd()
 #endif // VOLTMETER
 
 #ifdef OEV6
-        case 'R':   //Relay1 enable
-          if (tokenCnt == 2) {
-            if ( (uint8_t)dtou32(tokens[1]) == 1 ) {
-              g_EvseController.Relay1Enable(1);
-              Relay1EnableEnergy = true;
-            } else {
-              g_EvseController.Relay1Enable(0);
-              Relay1EnableEnergy = false;
-            }
-            u1.u8 = 1; // Mark as volatile / nosave = 1
-            rc = 0;
-          }
+case 'R':   // Handles $SR <relay_num> <value>
+          if (tokenCnt == 3) {
+            uint8_t relayNum = (uint8_t)dtou32(tokens[1]);
+            uint8_t relayVal = (uint8_t)dtou32(tokens[2]);
 
-          break;
-#endif //OEV6
-
-#ifdef OEV6
-        case 'S':   //Relay2 enable
-          if (tokenCnt == 2) {
-            if ( (uint8_t)dtou32(tokens[1]) == 1 ) {
-              g_EvseController.Relay2Enable(1);
-              Relay2EnableEnergy = true;
-            } else {
-              g_EvseController.Relay2Enable(0);
-              Relay2EnableEnergy = false;
+            if (relayNum == 1) {        // Case 1: Relay 1
+              if (relayVal == 1) {
+                g_EvseController.Relay1Enable(1);
+                Relay1EnableEnergy = true;
+              } else {
+                g_EvseController.Relay1Enable(0);
+                Relay1EnableEnergy = false;
+              }
+              u1.u8 = 1; 
+              rc = 0;
+            } 
+            else if (relayNum == 2) {   // Case 2: Relay 2
+              if (relayVal == 1) {
+                g_EvseController.Relay2Enable(1);
+                Relay2EnableEnergy = true;
+              } else {
+                g_EvseController.Relay2Enable(0);
+                Relay2EnableEnergy = false;
+              }
+              u1.u8 = 1; 
+              rc = 0;
             }
-            u1.u8 = 1; // Mark as volatile / nosave = 1
-            rc = 0;
+            else if (relayNum == 3) {   // Case 2: Relay AC
+              if (relayVal == 1) {
+                g_EvseController.RelayACEnable(1);
+              } else {
+                g_EvseController.RelayACEnable(0);
+              }
+              u1.u8 = 1; 
+              rc = 0;
+            }
           }
           break;
 #endif //OEV6
