@@ -310,6 +310,7 @@ void J1772EVSEController::chargingOn()
   }
 #endif // OEV6
 #ifdef CHARGINGAC_REG
+  if (relayACEnable) {
     pinChargingAC.write(1);
 #endif
 
@@ -1276,6 +1277,10 @@ void J1772EVSEController::Update(uint8_t forcetransition)
       if (relay2Enable) {digitalWrite(V6_CHARGING_PIN2, HIGH);}
       else
       {digitalWrite(V6_CHARGING_PIN2, LOW);}
+	
+      #ifdef CHARGINGAC_REG
+      if (!relayACEnable) {pinChargingAC.write(0);}
+      #endif
     }
     #endif // OEV6
 
