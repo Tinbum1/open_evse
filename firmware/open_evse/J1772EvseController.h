@@ -233,8 +233,9 @@ class J1772EVSEController {
 
 #ifdef OEV6
   uint8_t isV6() { return m_isV6; }
-  uint8_t relay1Enable = 1;   //default to both relays enabled
-  uint8_t relay2Enable = 1;   //default to both relays enabled
+  uint8_t relay1Enable = 0;   //default to both relays disabled
+  uint8_t relay2Enable = 0;   //default to both relays disabled
+  uint8_t relayACEnable = 1;   //default to both relays disabled
 #endif
 
 #ifdef ADVPWR
@@ -296,7 +297,8 @@ public:
   void Sleep(); // graceful stop - e.g. waiting for timer to fire- give the EV time to stop charging first
   void Relay1Enable(uint8_t relay1on) { relay1Enable = relay1on; }
   void Relay2Enable(uint8_t relay2on) { relay2Enable = relay2on; }
-
+  void RelayACEnable(uint8_t relayACon) { relayACEnable = relayACon; }
+  
   uint16_t GetFlags() { return m_wFlags; }
   uint16_t GetVFlags() { return m_wVFlags; }
 
